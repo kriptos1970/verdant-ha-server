@@ -1,0 +1,22 @@
+name: Verdant Server
+version: "0.1.0"
+slug: verdant_server
+description: Sincronizzazione privata di Verdant per macOS e iOS
+arch:
+  - aarch64
+  - amd64
+startup: application
+boot: auto
+init: false
+ports:
+  8099/tcp: 8099
+ports_description:
+  8099/tcp: API Verdant
+options:
+  token: ""
+  log_level: info
+  max_photo_mb: 20
+schema:
+  token: password
+  log_level: list(debug|info|warning|error)
+  max_photo_mb: int(1,100)
