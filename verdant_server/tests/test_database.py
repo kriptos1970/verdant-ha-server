@@ -1,6 +1,8 @@
+import json
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 
@@ -10,6 +12,7 @@ sys.path.insert(0, str(APP_DIRECTORY))
 from database import VerdantDatabase, VersionConflict
 from photo_storage import PhotoStorage
 from home_assistant import normalize_exposed_sensors
+from settings import Settings
 
 
 class VerdantDatabaseTests(unittest.TestCase):
@@ -119,6 +122,18 @@ class VerdantDatabaseTests(unittest.TestCase):
         result = normalize_exposed_sensors(states, frozenset({"sensor.balcone_temperature", "sensor.private_motion"}))
         self.assertEqual([item["entityID"] for item in result], ["sensor.balcone_temperature"])
         self.assertEqual(result[0]["value"], 21.4)
+
+    def test_settings_prefer_supervisor_options_for_exposed_entities(self):
+        options = self.root / "options.json"
+        options.write_text(json.dumps({"exposed_entities": ["sensor.balcone_temperature", "sensor.dracena_moisture"]}))
+        environment = {
+            "VERDANT_TOKEN": "test-token",
+            "VERDANT_DATA_DIR": str(self.root),
+            "VERDANT_EXPOSED_ENTITIES": "[]",
+        }
+        with patch.dict("os.environ", environment, clear=True):
+            settings = Settings.from_environment()
+        self.assertEqual(settings.exposed_entities, frozenset({"sensor.balcone_temperature", "sensor.dracena_moisture"}))
 
 
 if __name__ == "__main__":

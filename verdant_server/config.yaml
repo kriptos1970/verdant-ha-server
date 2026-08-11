@@ -1,5 +1,5 @@
 name: Verdant Server
-version: "0.3.2"
+version: "0.3.3"
 slug: verdant_server
 description: Sincronizzazione privata e sensori selezionati per Verdant
 url: https://github.com/kriptos1970/verdant-ha-server

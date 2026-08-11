@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.3
+
+- Legge i sensori autorizzati direttamente dalle opzioni persistenti del Supervisor.
+- Allinea la versione restituita dall'endpoint di stato.
+
 ## 0.3.2
 
 - Aggiunge il supporto effettivo alla collezione sincronizzata `measurements`.

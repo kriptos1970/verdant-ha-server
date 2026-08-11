@@ -26,7 +26,7 @@ async def lifespan(_: FastAPI):
     database.close()
 
 
-app = FastAPI(title="Verdant Server", version="0.3.0", lifespan=lifespan)
+app = FastAPI(title="Verdant Server", version="0.3.3", lifespan=lifespan)
 
 
 class EntityWrite(BaseModel):
@@ -62,7 +62,7 @@ def health() -> dict[str, str | list[str]]:
     return {
         "status": "ok",
         "service": "verdant-server",
-        "version": "0.3.0",
+        "version": "0.3.3",
         "capabilities": ["species-profiles", "measurements", "home-assistant-sensors", "sensor-mappings"],
     }
 

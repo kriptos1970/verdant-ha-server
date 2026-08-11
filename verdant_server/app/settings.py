@@ -27,6 +27,15 @@ class Settings:
             exposed = exposed_value if isinstance(exposed_value, list) else []
         except json.JSONDecodeError:
             exposed = [value.strip() for value in exposed_raw.split(",") if value.strip()]
+        options_path = data_dir / "options.json"
+        if options_path.is_file():
+            try:
+                options = json.loads(options_path.read_text(encoding="utf-8"))
+                configured = options.get("exposed_entities")
+                if isinstance(configured, list):
+                    exposed = configured
+            except (OSError, json.JSONDecodeError):
+                pass
         return cls(
             token=token,
             data_dir=data_dir,
