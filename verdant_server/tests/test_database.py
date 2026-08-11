@@ -84,6 +84,17 @@ class VerdantDatabaseTests(unittest.TestCase):
             "OpenPlantbook",
         )
 
+    def test_measurements_are_supported(self):
+        created = self.database.upsert(
+            "measurements",
+            "measurement-1",
+            {"value": 21.5, "kind": "temperature"},
+            None,
+        )
+
+        self.assertEqual(created.collection, "measurements")
+        self.assertEqual(self.database.list_entities("measurements")[0].payload["value"], 21.5)
+
     def test_photo_storage_validates_and_replaces_files(self):
         storage = PhotoStorage(self.root / "photos", 1024)
         first = storage.save("photo-1", "image/png", b"first")

@@ -13,6 +13,7 @@ COLLECTIONS = frozenset({
     "species-profiles",
     "care-events",
     "growth-entries",
+    "measurements",
 })
 
 

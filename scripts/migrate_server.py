@@ -7,7 +7,7 @@ import urllib.parse
 import urllib.request
 
 
-COLLECTIONS = ("plants", "fertilizers", "species-profiles", "care-events", "growth-entries")
+COLLECTIONS = ("plants", "fertilizers", "species-profiles", "care-events", "growth-entries", "measurements")
 
 
 def request(base, token, method, path, body=None, content_type="application/json"):

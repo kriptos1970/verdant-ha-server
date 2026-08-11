@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.2
+
+- Aggiunge il supporto effettivo alla collezione sincronizzata `measurements`.
+
+## 0.3.1
+
+- Corregge la serializzazione dell'elenco `exposed_entities` all'avvio dell'add-on.
+
 ## 0.3.0
 
 - Espone a Verdant soltanto i sensori Home Assistant autorizzati.
@@ -11,6 +19,3 @@
 
 - Aggiunge la sincronizzazione dei profili biologici delle specie.
 - Estende la sincronizzazione di fotografie e misurazioni.
-# 0.3.1
-
-- Corretta la serializzazione dell'elenco `exposed_entities` all'avvio dell'add-on.
