@@ -48,7 +48,12 @@ def main():
     photo_ids = set()
 
     for collection in COLLECTIONS:
-        items = json_request(old_base, old_token, "GET", f"/v1/entities/{collection}").get("items", [])
+        try:
+            items = json_request(old_base, old_token, "GET", f"/v1/entities/{collection}").get("items", [])
+        except urllib.error.HTTPError as error:
+            if error.code != 404:
+                raise
+            items = []
         counts[collection] = len(items)
         for item in items:
             entity_id = item["id"]
