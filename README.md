@@ -28,8 +28,11 @@ VerdantServer/
 - `DELETE /v1/entities/{collection}/{id}`: eliminazione logica.
 - `PUT /v1/photos/{id}`: caricamento di una fotografia.
 - `GET /v1/photos/{id}`: download di una fotografia.
+- `GET /v1/sensors`: soli sensori Home Assistant autorizzati.
+- `GET/PUT /v1/sensor-mappings`: associazioni condivise a posizioni e piante.
 
 Tutte le rotte `/v1` richiedono `Authorization: Bearer <token>`.
+Il token Home Assistant resta interno all'add-on e non viene inviato ai client Verdant.
 
 Le collezioni iniziali sono `plants`, `fertilizers`, `care-events` e `growth-entries`. Il campo `payload` mantiene il modello Codable dell'app e permette di evolvere lo schema senza migrazioni distruttive immediate.
 
@@ -40,7 +43,18 @@ Le collezioni iniziali sono `plants`, `fertilizers`, `care-events` e `growth-ent
 3. Aprire **Impostazioni → App → App store** e scegliere **Controlla aggiornamenti** dal menu.
 4. Installare **Verdant Server**.
 5. Inserire un token lungo e casuale nella configurazione.
-6. Avviare l'app e abilitare **Avvio automatico** e **Watchdog**.
+6. Aggiungere a `exposed_entities` esclusivamente i sensori destinati a Verdant:
+
+   ```yaml
+   exposed_entities:
+     - sensor.balcone_temperature
+     - sensor.balcone_humidity
+     - sensor.gerbera_soil_moisture
+   ```
+
+   Sono accettate solo le classi `temperature`, `humidity`, `illuminance`,
+   `moisture` e `conductivity`; tutte le altre entità vengono scartate.
+7. Avviare l'app e abilitare **Avvio automatico** e **Watchdog**.
 
 Il server ascolta sulla porta TCP `8099`. Non inoltrare questa porta sul router: fuori casa deve essere raggiunta soltanto attraverso WireGuard.
 

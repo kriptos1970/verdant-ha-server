@@ -1,3 +1,4 @@
+import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -8,6 +9,9 @@ class Settings:
     token: str
     data_dir: Path
     max_photo_bytes: int
+    exposed_entities: frozenset[str]
+    home_assistant_url: str
+    home_assistant_token: str
 
     @classmethod
     def from_environment(cls) -> "Settings":
@@ -17,9 +21,17 @@ class Settings:
 
         data_dir = Path(os.environ.get("VERDANT_DATA_DIR", "/data"))
         max_photo_mb = int(os.environ.get("VERDANT_MAX_PHOTO_MB", "20"))
+        exposed_raw = os.environ.get("VERDANT_EXPOSED_ENTITIES", "[]").strip()
+        try:
+            exposed_value = json.loads(exposed_raw)
+            exposed = exposed_value if isinstance(exposed_value, list) else []
+        except json.JSONDecodeError:
+            exposed = [value.strip() for value in exposed_raw.split(",") if value.strip()]
         return cls(
             token=token,
             data_dir=data_dir,
             max_photo_bytes=max_photo_mb * 1024 * 1024,
+            exposed_entities=frozenset(str(value).strip() for value in exposed if str(value).strip()),
+            home_assistant_url=os.environ.get("VERDANT_HOME_ASSISTANT_URL", "http://supervisor/core/api").rstrip("/"),
+            home_assistant_token=os.environ.get("SUPERVISOR_TOKEN", "").strip(),
         )
-

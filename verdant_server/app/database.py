@@ -75,7 +75,32 @@ class VerdantDatabase:
 
                 CREATE INDEX IF NOT EXISTS changes_sequence_idx
                 ON changes(sequence);
+
+                CREATE TABLE IF NOT EXISTS server_state (
+                    key TEXT PRIMARY KEY,
+                    payload TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
                 """
+            )
+
+    def get_state(self, key: str, default: Any) -> Any:
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT payload FROM server_state WHERE key = ?", (key,)
+            ).fetchone()
+        return json.loads(row["payload"]) if row else default
+
+    def set_state(self, key: str, payload: Any) -> None:
+        encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+        updated_at = datetime.now(timezone.utc).isoformat()
+        with self._lock, self._connection:
+            self._connection.execute(
+                """
+                INSERT INTO server_state(key, payload, updated_at) VALUES (?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at
+                """,
+                (key, encoded, updated_at),
             )
 
     def list_entities(self, collection: str) -> list[StoredEntity]:

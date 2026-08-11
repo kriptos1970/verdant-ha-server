@@ -9,6 +9,7 @@ sys.path.insert(0, str(APP_DIRECTORY))
 
 from database import VerdantDatabase, VersionConflict
 from photo_storage import PhotoStorage
+from home_assistant import normalize_exposed_sensors
 
 
 class VerdantDatabaseTests(unittest.TestCase):
@@ -91,6 +92,22 @@ class VerdantDatabaseTests(unittest.TestCase):
         self.assertFalse(first.path.exists())
         self.assertTrue(second.path.exists())
         self.assertEqual(storage.find("photo-1").size, 6)
+
+    def test_server_state_round_trip(self):
+        mappings = [{"entityID": "sensor.balcone", "room": "Balcone", "plantID": None, "kind": "temperature"}]
+        self.database.set_state("sensor-mappings", mappings)
+        self.assertEqual(self.database.get_state("sensor-mappings", []), mappings)
+
+    def test_only_allowlisted_supported_numeric_sensors_are_exposed(self):
+        states = [
+            {"entity_id": "sensor.balcone_temperature", "state": "21.4", "last_updated": "2026-08-11T10:00:00Z",
+             "attributes": {"friendly_name": "Balcone", "device_class": "temperature", "unit_of_measurement": "°C"}},
+            {"entity_id": "sensor.private_motion", "state": "on", "attributes": {"device_class": "motion"}},
+            {"entity_id": "sensor.hidden_humidity", "state": "55", "attributes": {"device_class": "humidity"}},
+        ]
+        result = normalize_exposed_sensors(states, frozenset({"sensor.balcone_temperature", "sensor.private_motion"}))
+        self.assertEqual([item["entityID"] for item in result], ["sensor.balcone_temperature"])
+        self.assertEqual(result[0]["value"], 21.4)
 
 
 if __name__ == "__main__":

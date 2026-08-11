@@ -9,11 +9,15 @@ from pydantic import BaseModel, Field
 from database import COLLECTIONS, VerdantDatabase, VersionConflict
 from photo_storage import PhotoStorage
 from settings import Settings
+from home_assistant import HomeAssistantSensorProvider
 
 
 settings = Settings.from_environment()
 database = VerdantDatabase(settings.data_dir / "verdant.sqlite3")
 photos = PhotoStorage(settings.data_dir / "photos", settings.max_photo_bytes)
+sensors = HomeAssistantSensorProvider(
+    settings.home_assistant_url, settings.home_assistant_token, settings.exposed_entities
+)
 
 
 @asynccontextmanager
@@ -22,12 +26,23 @@ async def lifespan(_: FastAPI):
     database.close()
 
 
-app = FastAPI(title="Verdant Server", version="0.2.0", lifespan=lifespan)
+app = FastAPI(title="Verdant Server", version="0.3.0", lifespan=lifespan)
 
 
 class EntityWrite(BaseModel):
     payload: dict[str, Any]
     expected_version: int | None = Field(default=None, alias="expectedVersion", ge=0)
+
+
+class SensorMapping(BaseModel):
+    entity_id: str = Field(alias="entityID")
+    room: str | None = None
+    plant_id: str | None = Field(default=None, alias="plantID")
+    kind: str
+
+
+class SensorMappingsWrite(BaseModel):
+    items: list[SensorMapping]
 
 
 def authorize(authorization: str | None = Header(default=None)) -> None:
@@ -47,9 +62,29 @@ def health() -> dict[str, str | list[str]]:
     return {
         "status": "ok",
         "service": "verdant-server",
-        "version": "0.2.0",
-        "capabilities": ["species-profiles"],
+        "version": "0.3.0",
+        "capabilities": ["species-profiles", "measurements", "home-assistant-sensors", "sensor-mappings"],
     }
+
+
+@app.get("/v1/sensors", dependencies=[Depends(authorize)])
+def exposed_sensors():
+    try:
+        return {"items": sensors.sensors(), "exposedCount": len(settings.exposed_entities)}
+    except Exception as error:
+        raise HTTPException(status_code=502, detail=f"Home Assistant non raggiungibile: {error}") from error
+
+
+@app.get("/v1/sensor-mappings", dependencies=[Depends(authorize)])
+def get_sensor_mappings():
+    return {"items": database.get_state("sensor-mappings", [])}
+
+
+@app.put("/v1/sensor-mappings", dependencies=[Depends(authorize)])
+def put_sensor_mappings(body: SensorMappingsWrite):
+    items = [item.model_dump(by_alias=True) for item in body.items]
+    database.set_state("sensor-mappings", items)
+    return {"items": items}
 
 
 @app.get("/v1/sync", dependencies=[Depends(authorize)])

@@ -1,13 +1,15 @@
 name: Verdant Server
-version: "0.2.0"
+version: "0.3.0"
 slug: verdant_server
-description: Sincronizzazione privata di Verdant per macOS e iOS
+description: Sincronizzazione privata e sensori selezionati per Verdant
+url: https://github.com/kriptos1970/verdant-ha-server
 arch:
   - aarch64
   - amd64
 startup: application
 boot: auto
 init: false
+homeassistant_api: true
 ports:
   8099/tcp: 8099
 ports_description:
@@ -16,7 +18,10 @@ options:
   token: ""
   log_level: info
   max_photo_mb: 20
+  exposed_entities: []
 schema:
   token: password
   log_level: list(debug|info|warning|error)
   max_photo_mb: int(1,100)
+  exposed_entities:
+    - str
