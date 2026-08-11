@@ -39,6 +39,50 @@ class VerdantDatabaseTests(unittest.TestCase):
         with self.assertRaises(VersionConflict):
             self.database.upsert("fertilizers", "product-1", {"name": "Altro"}, 0)
 
+    def test_species_profiles_are_supported(self):
+        created = self.database.upsert(
+            "species-profiles",
+            "species-1",
+            {"canonicalScientificName": "Monstera deliciosa"},
+            None,
+        )
+
+        self.assertEqual(created.collection, "species-profiles")
+        self.assertEqual(
+            self.database.list_entities("species-profiles")[0].payload["canonicalScientificName"],
+            "Monstera deliciosa",
+        )
+
+    def test_species_profile_round_trips_ecology_classification_and_evidence(self):
+        payload = {
+            "canonicalScientificName": "Monstera deliciosa",
+            "ecology": {
+                "climate": "tropical",
+                "naturalSunExposure": "filteredShade",
+                "evidence": [
+                    {
+                        "source": "botanicalProvider",
+                        "sourceName": "OpenPlantbook",
+                        "sourceURL": "https://open.plantbook.io/example",
+                        "summary": "bright indirect light",
+                    }
+                ],
+            },
+            "lightClassification": {
+                "profileID": "TROPICAL_FILTERED_LIGHT",
+                "confidence": 0.93,
+                "source": "curatedSpecies",
+            },
+        }
+        self.database.upsert("species-profiles", "species-complete", payload, None)
+        restored = self.database.list_entities("species-profiles")[0].payload
+
+        self.assertEqual(restored, payload)
+        self.assertEqual(
+            restored["ecology"]["evidence"][0]["sourceName"],
+            "OpenPlantbook",
+        )
+
     def test_photo_storage_validates_and_replaces_files(self):
         storage = PhotoStorage(self.root / "photos", 1024)
         first = storage.save("photo-1", "image/png", b"first")
@@ -51,4 +95,3 @@ class VerdantDatabaseTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

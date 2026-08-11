@@ -1,5 +1,5 @@
 name: Verdant Server
-version: "0.1.0"
+version: "0.2.0"
 slug: verdant_server
 description: Sincronizzazione privata di Verdant per macOS e iOS
 arch:

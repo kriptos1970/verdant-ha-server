@@ -7,7 +7,13 @@ from pathlib import Path
 from typing import Any
 
 
-COLLECTIONS = frozenset({"plants", "fertilizers", "care-events", "growth-entries"})
+COLLECTIONS = frozenset({
+    "plants",
+    "fertilizers",
+    "species-profiles",
+    "care-events",
+    "growth-entries",
+})
 
 
 class VersionConflict(Exception):
@@ -204,4 +210,3 @@ class VerdantDatabase:
             deleted=bool(row["deleted"]),
             sequence=int(row["sequence"]),
         )
-

@@ -22,7 +22,7 @@ async def lifespan(_: FastAPI):
     database.close()
 
 
-app = FastAPI(title="Verdant Server", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="Verdant Server", version="0.2.0", lifespan=lifespan)
 
 
 class EntityWrite(BaseModel):
@@ -43,8 +43,13 @@ def validate_collection(collection: str) -> str:
 
 
 @app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok", "service": "verdant-server", "version": "0.1.0"}
+def health() -> dict[str, str | list[str]]:
+    return {
+        "status": "ok",
+        "service": "verdant-server",
+        "version": "0.2.0",
+        "capabilities": ["species-profiles"],
+    }
 
 
 @app.get("/v1/sync", dependencies=[Depends(authorize)])

@@ -4,6 +4,8 @@ Server privato per sincronizzare Verdant tra macOS e iOS tramite la rete locale 
 
 Il progetto è separato dall'app Apple e viene distribuito come app (add-on) Home Assistant. Usa SQLite per i dati, il filesystem per le fotografie e conserva tutto nel volume persistente `/data` gestito da Home Assistant.
 
+La sincronizzazione fotografica comprende l'immagine principale delle piante, tutte le immagini del diario di crescita, tutte le sessioni fotografiche di controllo salute e le immagini dei fertilizzanti. Il database e la cartella `/data/photos` vengono quindi conservati insieme quando il backup Home Assistant include Verdant Server.
+
 ## Struttura
 
 ```text
