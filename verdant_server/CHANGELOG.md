@@ -11,3 +11,6 @@
 
 - Aggiunge la sincronizzazione dei profili biologici delle specie.
 - Estende la sincronizzazione di fotografie e misurazioni.
+# 0.3.1
+
+- Corretta la serializzazione dell'elenco `exposed_entities` all'avvio dell'add-on.

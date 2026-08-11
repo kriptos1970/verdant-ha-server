@@ -10,7 +10,9 @@ fi
 export VERDANT_TOKEN
 export VERDANT_LOG_LEVEL="$(bashio::config 'log_level')"
 export VERDANT_MAX_PHOTO_MB="$(bashio::config 'max_photo_mb')"
-export VERDANT_EXPOSED_ENTITIES="$(bashio::config 'exposed_entities')"
+# bashio can render array items on separate lines. Re-encode the value as
+# compact JSON so the Python process always receives the complete list.
+export VERDANT_EXPOSED_ENTITIES="$(bashio::config 'exposed_entities' | jq -c '.')"
 export VERDANT_DATA_DIR="/data"
 export VERDANT_PORT="8099"
 
