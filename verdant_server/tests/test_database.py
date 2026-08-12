@@ -1,3 +1,4 @@
+import hashlib
 import json
 import sys
 import tempfile
@@ -106,6 +107,7 @@ class VerdantDatabaseTests(unittest.TestCase):
         self.assertFalse(first.path.exists())
         self.assertTrue(second.path.exists())
         self.assertEqual(storage.find("photo-1").size, 6)
+        self.assertEqual(storage.find("photo-1").checksum, hashlib.sha256(b"second").hexdigest())
 
     def test_server_state_round_trip(self):
         mappings = [{"entityID": "sensor.balcone", "room": "Balcone", "plantID": None, "kind": "temperature"}]

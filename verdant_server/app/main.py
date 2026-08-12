@@ -26,7 +26,7 @@ async def lifespan(_: FastAPI):
     database.close()
 
 
-app = FastAPI(title="Verdant Server", version="0.3.3", lifespan=lifespan)
+app = FastAPI(title="Verdant Server", version="0.3.4", lifespan=lifespan)
 
 
 class EntityWrite(BaseModel):
@@ -62,8 +62,11 @@ def health() -> dict[str, str | list[str]]:
     return {
         "status": "ok",
         "service": "verdant-server",
-        "version": "0.3.3",
-        "capabilities": ["species-profiles", "measurements", "home-assistant-sensors", "sensor-mappings"],
+        "version": "0.3.4",
+        "capabilities": [
+            "species-profiles", "measurements", "home-assistant-sensors",
+            "sensor-mappings", "conditional-photos",
+        ],
     }
 
 
@@ -130,9 +133,24 @@ async def put_photo(photo_id: str, request: Request, content_type: str | None = 
     return {"id": photo_id, "size": photo.size, "checksum": photo.checksum}
 
 
-@app.get("/v1/photos/{photo_id}", dependencies=[Depends(authorize)])
-def get_photo(photo_id: str, response: Response):
+@app.head("/v1/photos/{photo_id}", dependencies=[Depends(authorize)])
+def head_photo(photo_id: str):
     photo = photos.find(photo_id)
     if photo is None:
         raise HTTPException(status_code=404, detail="Fotografia non trovata")
-    return FileResponse(photo.path, media_type=photo.content_type, headers={"ETag": photo.checksum})
+    return Response(headers={
+        "Content-Type": photo.content_type,
+        "Content-Length": str(photo.size),
+        "ETag": f'"{photo.checksum}"',
+    })
+
+
+@app.get("/v1/photos/{photo_id}", dependencies=[Depends(authorize)])
+def get_photo(photo_id: str, if_none_match: str | None = Header(default=None)):
+    photo = photos.find(photo_id)
+    if photo is None:
+        raise HTTPException(status_code=404, detail="Fotografia non trovata")
+    etag = f'"{photo.checksum}"'
+    if if_none_match is not None and if_none_match.strip() in {etag, photo.checksum}:
+        return Response(status_code=304, headers={"ETag": etag})
+    return FileResponse(photo.path, media_type=photo.content_type, headers={"ETag": etag})

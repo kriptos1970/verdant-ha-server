@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.4
+
+- Evita di trasferire nuovamente fotografie invariate usando checksum SHA-256 ed ETag.
+- Aggiunge richieste HEAD e download condizionali per la sincronizzazione fotografica.
+
 ## 0.3.3
 
 - Legge i sensori autorizzati direttamente dalle opzioni persistenti del Supervisor.
