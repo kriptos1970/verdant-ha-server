@@ -47,7 +47,12 @@ class PhotoStorage:
         content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
         return StoredPhoto(path, content_type, hashlib.sha256(data).hexdigest(), len(data))
 
+    def delete(self, photo_id: str) -> bool:
+        matches = list(self._directory.glob(f"{photo_id}.*"))
+        for path in matches:
+            path.unlink()
+        return bool(matches)
+
     def _remove_existing(self, photo_id: str) -> None:
         for path in self._directory.glob(f"{photo_id}.*"):
             path.unlink()
-

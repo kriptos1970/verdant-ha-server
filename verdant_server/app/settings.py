@@ -12,6 +12,13 @@ class Settings:
     exposed_entities: frozenset[str]
     home_assistant_url: str
     home_assistant_token: str
+    # Nuove impostazioni Care Engine
+    poll_interval_minutes: int
+    gemini_api_key: str
+    openai_api_key: str
+    ai_provider: str  # "gemini" o "openai"
+    ai_plan_frequency_days: int
+    ai_plan_update_time: str
 
     @classmethod
     def from_environment(cls) -> "Settings":
@@ -43,4 +50,19 @@ class Settings:
             exposed_entities=frozenset(str(value).strip() for value in exposed if str(value).strip()),
             home_assistant_url=os.environ.get("VERDANT_HOME_ASSISTANT_URL", "http://supervisor/core/api").rstrip("/"),
             home_assistant_token=os.environ.get("SUPERVISOR_TOKEN", "").strip(),
+            poll_interval_minutes=int(os.environ.get("VERDANT_POLL_INTERVAL_MINUTES", "15")),
+            gemini_api_key=os.environ.get("VERDANT_GEMINI_API_KEY", "").strip(),
+            openai_api_key=os.environ.get("VERDANT_OPENAI_API_KEY", "").strip(),
+            ai_provider=os.environ.get("VERDANT_AI_PROVIDER", "none").strip().lower(),
+            ai_plan_frequency_days=max(1, int(os.environ.get("VERDANT_AI_PLAN_FREQUENCY_DAYS", "1"))),
+            ai_plan_update_time=os.environ.get("VERDANT_AI_PLAN_UPDATE_TIME", "03:00").strip(),
         )
+
+    @property
+    def ai_available(self) -> bool:
+        """Verifica se almeno un provider AI è configurato."""
+        if self.ai_provider == "gemini":
+            return bool(self.gemini_api_key)
+        if self.ai_provider == "openai":
+            return bool(self.openai_api_key)
+        return False

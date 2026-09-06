@@ -1,5 +1,5 @@
 name: Verdant Server
-version: "0.3.4"
+version: "0.4.9"
 slug: verdant_server
 description: Sincronizzazione privata e sensori selezionati per Verdant
 url: https://github.com/kriptos1970/verdant-ha-server
@@ -14,14 +14,27 @@ ports:
   8099/tcp: 8099
 ports_description:
   8099/tcp: API Verdant
+webui: http://[HOST]:[PORT:8099]/admin
 options:
   token: ""
   log_level: info
   max_photo_mb: 20
   exposed_entities: []
+  poll_interval_minutes: 15
+  ai_provider: none
+  gemini_api_key: ""
+  openai_api_key: ""
+  ai_plan_frequency_days: 1
+  ai_plan_update_time: "03:00"
 schema:
   token: password
   log_level: list(debug|info|warning|error)
   max_photo_mb: int(1,100)
   exposed_entities:
     - str
+  poll_interval_minutes: int(1,1440)
+  ai_provider: list(none|gemini|openai)
+  gemini_api_key: password?
+  openai_api_key: password?
+  ai_plan_frequency_days: int(1,30)
+  ai_plan_update_time: str

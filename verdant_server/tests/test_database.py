@@ -1,5 +1,6 @@
 import hashlib
 import json
+import sqlite3
 import sys
 import tempfile
 import unittest
@@ -99,6 +100,11 @@ class VerdantDatabaseTests(unittest.TestCase):
         self.assertEqual(created.collection, "measurements")
         self.assertEqual(self.database.list_entities("measurements")[0].payload["value"], 21.5)
 
+    def test_lists_all_plants_for_server_side_care_evaluation(self):
+        self.database.upsert("plants", "plant-without-sensors", {"name": "Calathea"}, None)
+        entities = self.database.list_entities("plants")
+        self.assertEqual([entity.entity_id for entity in entities], ["plant-without-sensors"])
+
     def test_photo_storage_validates_and_replaces_files(self):
         storage = PhotoStorage(self.root / "photos", 1024)
         first = storage.save("photo-1", "image/png", b"first")
@@ -109,10 +115,76 @@ class VerdantDatabaseTests(unittest.TestCase):
         self.assertEqual(storage.find("photo-1").size, 6)
         self.assertEqual(storage.find("photo-1").checksum, hashlib.sha256(b"second").hexdigest())
 
+    def test_photo_storage_delete_is_idempotent(self):
+        storage = PhotoStorage(self.root / "photos", 1024)
+        storage.save("photo-1", "image/jpeg", b"photo")
+
+        self.assertTrue(storage.delete("photo-1"))
+        self.assertIsNone(storage.find("photo-1"))
+        self.assertFalse(storage.delete("photo-1"))
+
     def test_server_state_round_trip(self):
         mappings = [{"entityID": "sensor.balcone", "room": "Balcone", "plantID": None, "kind": "temperature"}]
         self.database.set_state("sensor-mappings", mappings)
         self.assertEqual(self.database.get_state("sensor-mappings", []), mappings)
+
+    def test_migrates_legacy_database_with_backup_and_preserves_entities(self):
+        self.database.close()
+        legacy_path = self.root / "legacy.sqlite3"
+        connection = sqlite3.connect(legacy_path)
+        with connection:
+            connection.executescript(
+                """
+                CREATE TABLE entities (
+                    collection TEXT NOT NULL, entity_id TEXT NOT NULL,
+                    payload TEXT NOT NULL, version INTEGER NOT NULL,
+                    updated_at TEXT NOT NULL, deleted INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY (collection, entity_id)
+                );
+                CREATE TABLE changes (
+                    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                    collection TEXT NOT NULL, entity_id TEXT NOT NULL,
+                    payload TEXT NOT NULL, version INTEGER NOT NULL,
+                    updated_at TEXT NOT NULL, deleted INTEGER NOT NULL
+                );
+                INSERT INTO entities VALUES (
+                    'plants', 'legacy-plant', '{"name":"Monstera"}', 7,
+                    '2026-08-12T10:00:00+00:00', 0
+                );
+                """
+            )
+        connection.close()
+
+        migrated = VerdantDatabase(legacy_path)
+        try:
+            plants = migrated.list_entities("plants")
+            self.assertEqual(len(plants), 1)
+            self.assertEqual(plants[0].entity_id, "legacy-plant")
+            self.assertEqual(plants[0].version, 7)
+            self.assertEqual(plants[0].payload["name"], "Monstera")
+            self.assertEqual(
+                migrated._connection.execute("PRAGMA user_version").fetchone()[0],
+                VerdantDatabase.SCHEMA_VERSION,
+            )
+            self.assertIsNotNone(
+                migrated._connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='measurements_log'"
+                ).fetchone()
+            )
+        finally:
+            migrated.close()
+
+        backup_path = legacy_path.with_name("legacy.sqlite3.pre-0.4.0.bak")
+        self.assertTrue(backup_path.is_file())
+        backup = sqlite3.connect(backup_path)
+        try:
+            row = backup.execute(
+                "SELECT entity_id, version FROM entities WHERE collection='plants'"
+            ).fetchone()
+            self.assertEqual(row, ("legacy-plant", 7))
+            self.assertEqual(backup.execute("PRAGMA user_version").fetchone()[0], 0)
+        finally:
+            backup.close()
 
     def test_only_allowlisted_supported_numeric_sensors_are_exposed(self):
         states = [

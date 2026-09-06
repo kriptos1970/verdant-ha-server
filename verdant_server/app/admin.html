@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Verdant Server · Piano AI</title>
+  <style>
+    :root{color-scheme:light dark;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f3f5ef;color:#183226}
+    body{margin:0;padding:32px 18px}.card{max-width:720px;margin:auto;background:#fff;border-radius:20px;padding:26px;box-shadow:0 12px 40px #17332318}
+    h1{margin:0 0 6px}.sub{color:#617064;margin:0 0 24px}.auth{display:flex;gap:10px;margin-bottom:20px}
+    input{flex:1;padding:11px;border:1px solid #bdc8bf;border-radius:10px;font:inherit}button{border:0;border-radius:10px;padding:11px 16px;font:inherit;font-weight:650;cursor:pointer;background:#28633f;color:#fff}
+    button:disabled{opacity:.55;cursor:wait}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.item{background:#f2f6f1;border-radius:12px;padding:14px}.label{font-size:12px;color:#68776c;text-transform:uppercase;letter-spacing:.05em}.value{margin-top:5px;font-weight:600;overflow-wrap:anywhere}
+    .actions{display:flex;align-items:center;gap:14px;margin-top:22px}.message{font-size:14px}.success{color:#23753d}.error{color:#a62e2e}.running{color:#9a6500}@media(max-width:560px){.grid{grid-template-columns:1fr}.auth{flex-direction:column}}
+    @media(prefers-color-scheme:dark){:root{background:#111813;color:#e8f0e9}.card{background:#1b251e}.item{background:#253128}.sub,.label{color:#a6b3a8}input{background:#131b15;color:#fff;border-color:#445348}}
+  </style>
+</head>
+<body><main class="card">
+  <h1>Pianificazione AI</h1><p class="sub">Aggiornamento dei piani eseguito esclusivamente da Verdant Server.</p>
+  <div class="auth"><input id="token" type="password" autocomplete="current-password" placeholder="Token Verdant Server"><button id="connect">Collega</button></div>
+  <section class="grid" id="status" hidden>
+    <div class="item"><div class="label">Esito</div><div class="value" id="outcome">—</div></div>
+    <div class="item"><div class="label">Provider e modello</div><div class="value" id="provider">—</div></div>
+    <div class="item"><div class="label">Ultimo tentativo</div><div class="value" id="lastRun">—</div></div>
+    <div class="item"><div class="label">Ultimo successo</div><div class="value" id="lastSuccess">—</div></div>
+    <div class="item"><div class="label">Prossima esecuzione</div><div class="value" id="nextRun">—</div></div>
+    <div class="item"><div class="label">Piante aggiornate</div><div class="value" id="count">—</div></div>
+    <div class="item"><div class="label">Frequenza</div><div class="value" id="schedule">—</div></div>
+    <div class="item"><div class="label">Errore</div><div class="value" id="lastError">Nessuno</div></div>
+  </section>
+  <div class="actions"><button id="refresh" hidden>Aggiorna ora</button><span class="message" id="message"></span></div>
+</main>
+<script>
+const $=id=>document.getElementById(id), token=$('token'), message=$('message'), refresh=$('refresh');
+token.value=sessionStorage.getItem('verdantToken')||'';
+const date=value=>value?new Intl.DateTimeFormat('it-IT',{dateStyle:'medium',timeStyle:'short'}).format(new Date(value)):'Mai';
+async function call(path,method='GET'){
+  const response=await fetch(path,{method,headers:{Authorization:`Bearer ${token.value.trim()}`}});
+  if(!response.ok){let detail='';try{detail=(await response.json()).detail||''}catch{}throw new Error(response.status===401?'Token non valido':detail||`Errore server ${response.status}`);}
+  return response.json();
+}
+function render(s){
+  $('status').hidden=false;refresh.hidden=false;$('outcome').textContent=({success:'Riuscito',running:'In corso','partial-failure':'Parzialmente riuscito','never-run':'Mai eseguito'})[s.outcome]||s.outcome||'—';
+  $('outcome').className='value '+(s.outcome==='success'?'success':s.outcome==='running'?'running':s.outcome==='partial-failure'?'error':'');
+  $('provider').textContent=[s.provider,s.model].filter(Boolean).join(' · ')||'Non configurato';$('lastRun').textContent=date(s.lastRunAt);$('lastSuccess').textContent=date(s.lastSuccessAt);$('nextRun').textContent=date(s.nextRunAt);$('count').textContent=s.updatedPlantCount??0;$('schedule').textContent=`Ogni ${s.frequencyDays} ${s.frequencyDays===1?'giorno':'giorni'} alle ${s.updateTime}`;$('lastError').textContent=s.lastError||'Nessuno';
+}
+async function load(){try{message.textContent='Connessione…';const s=await call('/v1/care/ai-plan-status');sessionStorage.setItem('verdantToken',token.value.trim());render(s);message.textContent='';}catch(e){message.textContent=e.message;message.className='message error';}}
+$('connect').onclick=load;refresh.onclick=async()=>{refresh.disabled=true;message.textContent='Aggiornamento avviato…';message.className='message running';try{render(await call('/v1/care/ai-plans/refresh?force=true','POST'));const poll=setInterval(async()=>{try{const s=await call('/v1/care/ai-plan-status');render(s);if(s.outcome!=='running'){clearInterval(poll);refresh.disabled=false;message.textContent=s.outcome==='success'?'Aggiornamento completato':'Aggiornamento concluso con errori';message.className='message '+(s.outcome==='success'?'success':'error');}}catch(e){clearInterval(poll);refresh.disabled=false;message.textContent=e.message;message.className='message error';}},2000);}catch(e){refresh.disabled=false;message.textContent=e.message;message.className='message error';}};
+if(token.value)load();
+</script></body></html>
