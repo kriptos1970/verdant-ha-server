@@ -40,6 +40,80 @@ class VerdantDatabaseTests(unittest.TestCase):
         self.assertEqual(self.database.list_entities("plants"), [])
         self.assertEqual([change.version for change in self.database.changes_since(0)], [1, 2, 3])
 
+    @staticmethod
+    def care_event_payload(**overrides):
+        payload = {
+            "id": "event-1",
+            "plantID": "plant-1",
+            "kind": "Annaffia",
+            "date": "2026-09-19T09:29:00+02:00",
+            "status": "completed",
+            "note": None,
+            "health": None,
+            "postponedUntil": None,
+            "productID": None,
+            "treatmentPlanID": None,
+            "schemaVersion": 2,
+            "createdAt": "2026-09-19T09:29:00+02:00",
+            "updatedAt": "2026-09-19T09:29:00+02:00",
+            "deletedAt": None,
+            "revision": 1,
+            "origin": "user",
+        }
+        payload.update(overrides)
+        return payload
+
+    def test_v2_care_event_put_is_idempotent(self):
+        payload = self.care_event_payload()
+
+        created, created_applied = self.database.put_care_event("event-1", payload)
+        repeated, repeated_applied = self.database.put_care_event("event-1", payload)
+
+        self.assertTrue(created_applied)
+        self.assertFalse(repeated_applied)
+        self.assertEqual(created.sequence, repeated.sequence)
+        self.assertEqual(len(self.database.care_event_changes_since(0)), 1)
+
+    def test_v2_tombstone_wins_and_stale_live_event_cannot_resurrect(self):
+        live = self.care_event_payload()
+        tombstone = self.care_event_payload(
+            updatedAt="2026-09-20T10:00:00+02:00",
+            deletedAt="2026-09-20T10:00:00+02:00",
+            revision=2,
+        )
+        stale_live = self.care_event_payload(
+            updatedAt="2026-09-19T20:00:00+02:00",
+            revision=2,
+        )
+
+        self.database.put_care_event("event-1", live)
+        deleted, deletion_applied = self.database.put_care_event("event-1", tombstone)
+        retained, stale_applied = self.database.put_care_event("event-1", stale_live)
+
+        self.assertTrue(deletion_applied)
+        self.assertTrue(deleted.deleted)
+        self.assertFalse(stale_applied)
+        self.assertTrue(retained.deleted)
+        self.assertEqual(self.database.list_care_events(), [])
+        self.assertEqual(len(self.database.list_care_events(include_deleted=True)), 1)
+
+    def test_v2_newer_edit_and_incremental_feed(self):
+        first = self.care_event_payload()
+        newer = self.care_event_payload(
+            note="Terreno asciutto",
+            updatedAt="2026-09-21T08:00:00Z",
+            revision=2,
+        )
+        created, _ = self.database.put_care_event("event-1", first)
+        updated, applied = self.database.put_care_event("event-1", newer)
+
+        self.assertTrue(applied)
+        self.assertGreater(updated.sequence, created.sequence)
+        self.assertEqual(self.database.list_care_events("plant-1")[0].payload["note"], "Terreno asciutto")
+        self.assertEqual(self.database.list_care_events("other-plant"), [])
+        changes = self.database.care_event_changes_since(created.sequence)
+        self.assertEqual([change.payload["revision"] for change in changes], [2])
+
     def test_rejects_stale_version(self):
         self.database.upsert("fertilizers", "product-1", {"name": "Concime"}, None)
         with self.assertRaises(VersionConflict):

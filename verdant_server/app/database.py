@@ -1,4 +1,5 @@
 import json
+import hashlib
 import sqlite3
 import threading
 from dataclasses import dataclass
@@ -191,6 +192,126 @@ class VerdantDatabase:
                 (sequence, limit),
             ).fetchall()
         return [self._entity_from_row(row) for row in rows]
+
+    def care_event_changes_since(self, sequence: int, limit: int = 500) -> list[StoredEntity]:
+        """Incremental v2 event feed, including tombstones."""
+        with self._lock:
+            rows = self._connection.execute(
+                """
+                SELECT collection, entity_id, payload, version, updated_at, deleted, sequence
+                FROM changes
+                WHERE sequence > ? AND collection = 'care-events'
+                ORDER BY sequence
+                LIMIT ?
+                """,
+                (sequence, limit),
+            ).fetchall()
+        return [self._entity_from_row(row) for row in rows]
+
+    def list_care_events(
+        self,
+        plant_id: str | None = None,
+        include_deleted: bool = False,
+        limit: int = 1000,
+    ) -> list[StoredEntity]:
+        """Returns v2 events without relying on SQLite's optional JSON extension."""
+        deleted_clause = "" if include_deleted else "AND e.deleted = 0"
+        with self._lock:
+            rows = self._connection.execute(
+                f"""
+                SELECT e.*, COALESCE((
+                    SELECT MAX(c.sequence) FROM changes c
+                    WHERE c.collection = e.collection AND c.entity_id = e.entity_id
+                ), 0) AS sequence
+                FROM entities e
+                WHERE e.collection = 'care-events' {deleted_clause}
+                ORDER BY e.updated_at, e.entity_id
+                """
+            ).fetchall()
+        events = [self._entity_from_row(row) for row in rows]
+        if plant_id is not None:
+            events = [event for event in events if event.payload.get("plantID") == plant_id]
+        return events[:limit]
+
+    def get_care_event(self, entity_id: str) -> StoredEntity | None:
+        """Reads an event including a tombstone."""
+        with self._lock:
+            row = self._connection.execute(
+                """
+                SELECT e.*, COALESCE((
+                    SELECT MAX(c.sequence) FROM changes c
+                    WHERE c.collection = e.collection AND c.entity_id = e.entity_id
+                ), 0) AS sequence
+                FROM entities e
+                WHERE e.collection = 'care-events' AND e.entity_id = ?
+                """,
+                (entity_id,),
+            ).fetchone()
+        return self._entity_from_row(row) if row else None
+
+    def put_care_event(self, entity_id: str, payload: dict[str, Any]) -> tuple[StoredEntity, bool]:
+        """Idempotent last-write-wins merge for v2 care events.
+
+        The client timestamp and revision form the logical clock. A tombstone wins
+        an exact tie, and a canonical hash provides a deterministic final tie-breaker.
+        Older writes are acknowledged but never overwrite newer state.
+        """
+        incoming_deleted = payload.get("deletedAt") is not None
+        encoded_payload = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+        incoming_updated_at = str(payload["updatedAt"])
+
+        with self._lock, self._connection:
+            current = self._connection.execute(
+                """
+                SELECT e.*, COALESCE((
+                    SELECT MAX(c.sequence) FROM changes c
+                    WHERE c.collection = e.collection AND c.entity_id = e.entity_id
+                ), 0) AS sequence
+                FROM entities e
+                WHERE e.collection = 'care-events' AND e.entity_id = ?
+                """,
+                (entity_id,),
+            ).fetchone()
+            if current is not None:
+                stored = self._entity_from_row(current)
+                if stored.payload == payload:
+                    return stored, False
+                if self._care_event_order(payload, incoming_deleted) <= self._care_event_order(
+                    stored.payload, stored.deleted, fallback_updated_at=stored.updated_at,
+                    fallback_revision=stored.version,
+                ):
+                    return stored, False
+                current_version = stored.version
+            else:
+                current_version = 0
+
+            version = current_version + 1
+            deleted_value = int(incoming_deleted)
+            self._connection.execute(
+                """
+                INSERT INTO entities(collection, entity_id, payload, version, updated_at, deleted)
+                VALUES ('care-events', ?, ?, ?, ?, ?)
+                ON CONFLICT(collection, entity_id) DO UPDATE SET
+                    payload = excluded.payload,
+                    version = excluded.version,
+                    updated_at = excluded.updated_at,
+                    deleted = excluded.deleted
+                """,
+                (entity_id, encoded_payload, version, incoming_updated_at, deleted_value),
+            )
+            cursor = self._connection.execute(
+                """
+                INSERT INTO changes(collection, entity_id, payload, version, updated_at, deleted)
+                VALUES ('care-events', ?, ?, ?, ?, ?)
+                """,
+                (entity_id, encoded_payload, version, incoming_updated_at, deleted_value),
+            )
+            sequence = int(cursor.lastrowid)
+
+        return StoredEntity(
+            "care-events", entity_id, payload, version, incoming_updated_at,
+            incoming_deleted, sequence,
+        ), True
 
     def upsert(
         self,
@@ -420,6 +541,31 @@ class VerdantDatabase:
             updated_at=row["updated_at"],
             deleted=bool(row["deleted"]),
             sequence=int(row["sequence"]),
+        )
+
+    @staticmethod
+    def _care_event_order(
+        payload: dict[str, Any],
+        deleted: bool,
+        fallback_updated_at: str = "",
+        fallback_revision: int = 0,
+    ) -> tuple[float, int, int, str]:
+        canonical = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+        raw_updated_at = payload.get("updatedAt") or fallback_updated_at
+        try:
+            if isinstance(raw_updated_at, (int, float)):
+                normalized_updated_at = float(raw_updated_at)
+            else:
+                normalized_updated_at = datetime.fromisoformat(
+                    str(raw_updated_at).replace("Z", "+00:00")
+                ).timestamp()
+        except (TypeError, ValueError):
+            normalized_updated_at = 0.0
+        return (
+            normalized_updated_at,
+            int(payload.get("revision", fallback_revision)),
+            int(deleted),
+            hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
         )
 
     @staticmethod

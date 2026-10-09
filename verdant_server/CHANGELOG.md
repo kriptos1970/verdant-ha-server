@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.0
+
+- Introduce le API v2 per eventi di cura indipendenti dalle schede pianta.
+- Rende gli aggiornamenti idempotenti e risolve deterministicamente i conflitti.
+- Conserva le eliminazioni come tombstone e offre un feed incrementale dedicato.
+- Mantiene operative le API v1 durante la migrazione dei client.
+
 ## 0.4.10
 
 - Conserva la disattivazione esplicita del controllo salute durante le revisioni AI.

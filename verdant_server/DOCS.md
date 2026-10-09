@@ -36,3 +36,21 @@ Il token interno di Home Assistant non viene mai restituito ai client Verdant.
 Le chiavi AI non vengono mai restituite ai client e non sono necessarie per il
 Care Engine deterministico.
 Non pubblicare la porta 8099 su Internet; per l'accesso remoto usa una VPN.
+
+## Eventi di cura API v2
+
+Gli eventi v2 sono risorse indipendenti e non vengono più dedotti dalla sola
+proprietà `history` della pianta. Gli endpoint richiedono la normale
+autenticazione Bearer:
+
+- `GET /v2/care-events?plantID=...`: snapshot degli eventi attivi;
+- `GET /v2/care-events?includeDeleted=true`: snapshot comprensivo dei tombstone;
+- `GET /v2/care-events/changes?since=...`: feed incrementale ordinato per sequenza;
+- `PUT /v2/care-events/{id}`: creazione o aggiornamento idempotente;
+- `DELETE /v2/care-events/{id}`: creazione di un tombstone, senza cancellazione fisica.
+
+Ogni payload contiene almeno `id`, `plantID`, `kind`, `date`, `schemaVersion`,
+`createdAt`, `updatedAt`, `revision` e `origin`. Il server confronta
+`updatedAt`, `revision`, stato di eliminazione e hash canonico: una copia vecchia
+non può quindi ripristinare un evento già eliminato. Gli endpoint v1 restano
+disponibili durante la migrazione.

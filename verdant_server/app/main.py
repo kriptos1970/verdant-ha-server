@@ -8,7 +8,7 @@ from typing import Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from database import COLLECTIONS, VerdantDatabase, VersionConflict
 from photo_storage import PhotoStorage
@@ -41,7 +41,6 @@ scheduler = CareScheduler(database, sensors, settings.poll_interval_minutes)
 ai_plan_refresh_lock = asyncio.Lock()
 manual_ai_refresh_task: asyncio.Task | None = None
 
-
 # ── Ciclo di vita dell'applicazione ───────────────────────────
 
 @asynccontextmanager
@@ -58,7 +57,7 @@ async def lifespan(_: FastAPI):
     database.close()
 
 
-app = FastAPI(title="Verdant Server", version="0.4.10", lifespan=lifespan)
+app = FastAPI(title="Verdant Server", version="0.5.0", lifespan=lifespan)
 
 
 # ── Modelli Pydantic ──────────────────────────────────────────
@@ -77,6 +76,38 @@ class SensorMapping(BaseModel):
 
 class SensorMappingsWrite(BaseModel):
     items: list[SensorMapping]
+
+
+class CareEventV2(BaseModel):
+    """Standalone event contract shared by the v2 clients and server."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    id: str = Field(min_length=1)
+    plant_id: str = Field(alias="plantID", min_length=1)
+    kind: str = Field(min_length=1)
+    date: datetime
+    status: str | None = None
+    note: str | None = None
+    health: str | None = None
+    postponed_until: datetime | None = Field(default=None, alias="postponedUntil")
+    product_id: str | None = Field(default=None, alias="productID")
+    treatment_plan_id: str | None = Field(default=None, alias="treatmentPlanID")
+    schema_version: int = Field(default=2, alias="schemaVersion", ge=2)
+    created_at: datetime = Field(alias="createdAt")
+    updated_at: datetime = Field(alias="updatedAt")
+    deleted_at: datetime | None = Field(default=None, alias="deletedAt")
+    revision: int = Field(ge=1)
+    origin: str = Field(min_length=1)
+
+
+class CareEventDeleteV2(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    plant_id: str = Field(alias="plantID", min_length=1)
+    updated_at: datetime = Field(alias="updatedAt")
+    revision: int = Field(ge=1)
+    origin: str = Field(default="user", min_length=1)
 
 
 # ── Middleware di autenticazione ──────────────────────────────
@@ -100,12 +131,13 @@ def health() -> dict[str, Any]:
     return {
         "status": "ok",
         "service": "verdant-server",
-        "version": "0.4.10",
+        "version": "0.5.0",
         "capabilities": [
             "species-profiles", "measurements", "home-assistant-sensors",
             "sensor-mappings", "conditional-photos",
             "photo-catalog",
             "auto-ingestion", "care-engine", "ai-daily-digest",
+            "care-events-v2", "care-event-tombstones", "incremental-event-sync",
         ],
         "scheduler": scheduler.status,
     }
@@ -165,6 +197,57 @@ def delete_entity(collection: str, entity_id: str, expected_version: int | None 
         return database.delete(collection, entity_id, expected_version).as_dict()
     except VersionConflict as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+# ── API v2: registro eventi indipendente ─────────────────────
+
+@app.get("/v2/care-events", dependencies=[Depends(authorize)])
+def list_care_events_v2(
+    plant_id: str | None = Query(default=None, alias="plantID"),
+    include_deleted: bool = Query(default=False, alias="includeDeleted"),
+    limit: int = Query(default=1000, ge=1, le=5000),
+):
+    items = database.list_care_events(plant_id, include_deleted, limit)
+    return {"items": [item.as_dict() for item in items]}
+
+
+@app.get("/v2/care-events/changes", dependencies=[Depends(authorize)])
+def care_event_changes_v2(
+    since: int = Query(default=0, ge=0),
+    limit: int = Query(default=500, ge=1, le=1000),
+):
+    changes = database.care_event_changes_since(since, limit)
+    next_sequence = changes[-1].sequence if changes else since
+    return {"changes": [change.as_dict() for change in changes], "nextSequence": next_sequence}
+
+
+@app.put("/v2/care-events/{event_id}", dependencies=[Depends(authorize)])
+def put_care_event_v2(event_id: str, body: CareEventV2):
+    if body.id != event_id:
+        raise HTTPException(status_code=422, detail="L'id del percorso non coincide con l'evento")
+    payload = body.model_dump(by_alias=True, mode="json", exclude_none=False)
+    stored, applied = database.put_care_event(event_id, payload)
+    return {"event": stored.as_dict(), "applied": applied}
+
+
+@app.delete("/v2/care-events/{event_id}", dependencies=[Depends(authorize)])
+def delete_care_event_v2(event_id: str, body: CareEventDeleteV2):
+    current = database.get_care_event(event_id)
+    if current is None:
+        raise HTTPException(status_code=404, detail="Evento non trovato")
+    if current.payload.get("plantID") != body.plant_id:
+        raise HTTPException(status_code=409, detail="L'evento appartiene a un'altra pianta")
+    payload = dict(current.payload)
+    payload.update({
+        "plantID": body.plant_id,
+        "updatedAt": body.updated_at.isoformat(),
+        "deletedAt": body.updated_at.isoformat(),
+        "revision": body.revision,
+        "origin": body.origin,
+        "schemaVersion": max(2, int(payload.get("schemaVersion", 2))),
+    })
+    stored, applied = database.put_care_event(event_id, payload)
+    return {"event": stored.as_dict(), "applied": applied}
 
 
 @app.put("/v1/photos/{photo_id}", dependencies=[Depends(authorize)])
