@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.10
+
+- Conserva la disattivazione esplicita del controllo salute durante le revisioni AI.
+- Impedisce al server di ricreare automaticamente un intervallo di ispezione di 7 giorni.
+
 ## 0.4.9
 
 - Sincronizza il catalogo completo dei ricordi fotografici tramite UUID stabili.

@@ -17,6 +17,7 @@ from home_assistant import HomeAssistantSensorProvider
 from scheduler import CareScheduler
 from care_engine import CareEngine
 from ai_provider import create_ai_provider
+from ai_plan_revision import apply_safe_ai_plan_revision
 
 
 # ── Configurazione ────────────────────────────────────────────
@@ -57,7 +58,7 @@ async def lifespan(_: FastAPI):
     database.close()
 
 
-app = FastAPI(title="Verdant Server", version="0.4.9", lifespan=lifespan)
+app = FastAPI(title="Verdant Server", version="0.4.10", lifespan=lifespan)
 
 
 # ── Modelli Pydantic ──────────────────────────────────────────
@@ -99,7 +100,7 @@ def health() -> dict[str, Any]:
     return {
         "status": "ok",
         "service": "verdant-server",
-        "version": "0.4.9",
+        "version": "0.4.10",
         "capabilities": [
             "species-profiles", "measurements", "home-assistant-sensors",
             "sensor-mappings", "conditional-photos",
@@ -526,31 +527,6 @@ def _measurements_for_plant(plant_id: str, room: str | None, limit: int = 20) ->
     return result
 
 
-def _apply_safe_ai_plan_revision(plant: dict[str, Any], proposal: dict[str, Any], now: datetime, provider) -> None:
-    def bounded(name: str, current: int, absolute_min: int, absolute_max: int) -> int:
-        proposed = int(proposal.get(name, current))
-        delta = max(1, round(current * 0.25))
-        return max(absolute_min, min(absolute_max, max(current - delta, min(current + delta, proposed))))
-    current_water = int(plant.get("wateringInterval", 7))
-    current_feed = int(plant.get("fertilizingInterval") or 28)
-    current_inspection = int(plant.get("inspectionInterval") or 7)
-    water = bounded("wateringDays", current_water, 1, 120)
-    feed = bounded("fertilizingDays", current_feed, 7, 365)
-    inspection = bounded("inspectionDays", current_inspection, 1, 30)
-    plant["wateringInterval"] = water
-    plant["fertilizingInterval"] = feed
-    plant["inspectionInterval"] = inspection
-    plan = plant.get("adaptivePlan")
-    if not isinstance(plan, dict):
-        raise ValueError("Piano adattivo mancante")
-    plan.update({"wateringDays": water, "fertilizingDays": feed, "inspectionDays": inspection,
-                 "revisionSource": "AI", "revisionProvider": f"{provider.provider_name} · {provider.model_name}",
-                 "revisedAt": now.timestamp() - 978307200})
-    reason = str(proposal.get("reason", "Revisione AI basata sui dati disponibili."))[:300]
-    rationale = plan.get("rationale") if isinstance(plan.get("rationale"), list) else []
-    plan["rationale"] = [reason] + [item for item in rationale if item != reason][:7]
-
-
 def _save_ai_plan_on_latest_entity(entity_id: str, proposal: dict[str, Any], now: datetime) -> None:
     for attempt in range(3):
         latest = database.get_entity("plants", entity_id)
@@ -559,7 +535,7 @@ def _save_ai_plan_on_latest_entity(entity_id: str, proposal: dict[str, Any], now
         plant = dict(latest.payload)
         if plant.get("carePlanMode") != "AI":
             return
-        _apply_safe_ai_plan_revision(plant, proposal, now, ai_provider)
+        apply_safe_ai_plan_revision(plant, proposal, now, ai_provider)
         try:
             database.upsert("plants", entity_id, plant, latest.version)
             return
