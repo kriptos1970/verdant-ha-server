@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.0
+
+- Rende il registro eventi v2 l'unica fonte autorevole della cronologia di cura.
+- Dichiara la capability `care-events-v2-authoritative` richiesta dai nuovi client.
+- Disattiva la proiezione legacy degli eventi annidati nelle schede pianta.
+
 ## 0.5.0
 
 - Introduce le API v2 per eventi di cura indipendenti dalle schede pianta.

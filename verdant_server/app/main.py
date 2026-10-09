@@ -57,7 +57,7 @@ async def lifespan(_: FastAPI):
     database.close()
 
 
-app = FastAPI(title="Verdant Server", version="0.5.0", lifespan=lifespan)
+app = FastAPI(title="Verdant Server", version="0.6.0", lifespan=lifespan)
 
 
 # ── Modelli Pydantic ──────────────────────────────────────────
@@ -131,13 +131,14 @@ def health() -> dict[str, Any]:
     return {
         "status": "ok",
         "service": "verdant-server",
-        "version": "0.5.0",
+        "version": "0.6.0",
         "capabilities": [
             "species-profiles", "measurements", "home-assistant-sensors",
             "sensor-mappings", "conditional-photos",
             "photo-catalog",
             "auto-ingestion", "care-engine", "ai-daily-digest",
-            "care-events-v2", "care-event-tombstones", "incremental-event-sync",
+            "care-events-v2", "care-events-v2-authoritative",
+            "care-event-tombstones", "incremental-event-sync",
         ],
         "scheduler": scheduler.status,
     }

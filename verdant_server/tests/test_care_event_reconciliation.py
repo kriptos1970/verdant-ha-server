@@ -35,14 +35,16 @@ def event(event_id="event-1", plant_id="plant-1", deleted_at=None):
 
 
 class CareEventReconciliationTests(unittest.TestCase):
-    def test_clean_snapshot_v1_and_v2(self):
+    def test_clean_snapshot_and_v2_with_metadata_only_server_plants(self):
         item = event()
-        plant = {
+        snapshot_plant = {
             "id": "plant-1", "name": "Test", "history": [item],
             "lastWatered": "2026-01-02T00:00:00Z", "inspectionInterval": None,
         }
-        report = module.reconcile([plant], [plant], {item["id"]: item})
+        remote_plant = dict(snapshot_plant, history=[])
+        report = module.reconcile([snapshot_plant], [remote_plant], {item["id"]: item})
         self.assertEqual(report["summary"]["errors"], 0)
+        self.assertEqual(report["summary"]["serverV1NestedEvents"], 0)
         self.assertEqual(report["summary"]["disabledHealthChecks"], 1)
 
     def test_reports_orphans_conflicts_and_anchor_mismatch(self):
@@ -57,6 +59,16 @@ class CareEventReconciliationTests(unittest.TestCase):
         self.assertGreater(report["summary"]["errors"], 0)
         self.assertEqual(report["orphanEventIDs"], ["orphan"])
         self.assertEqual(len(report["anchorMismatches"]), 1)
+
+    def test_reports_legacy_nested_event_residue(self):
+        item = event()
+        snapshot_plant = {
+            "id": "plant-1", "name": "Test", "history": [item],
+            "lastWatered": "2026-01-02T00:00:00Z", "inspectionInterval": None,
+        }
+        report = module.reconcile([snapshot_plant], [snapshot_plant], {item["id"]: item})
+        self.assertEqual(report["legacyNestedEventIDs"], ["event-1"])
+        self.assertGreater(report["summary"]["errors"], 0)
 
 
 if __name__ == "__main__":

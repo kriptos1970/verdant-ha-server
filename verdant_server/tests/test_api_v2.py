@@ -120,6 +120,11 @@ class CareEventV2APITests(unittest.TestCase):
         response = self.client.get("/v2/care-events")
         self.assertEqual(response.status_code, 401)
 
+    def test_health_declares_authoritative_v2_ledger(self):
+        health = self.client.get("/health").json()
+        self.assertEqual(health["version"], "0.6.0")
+        self.assertIn("care-events-v2-authoritative", health["capabilities"])
+
 
 if __name__ == "__main__":
     unittest.main()

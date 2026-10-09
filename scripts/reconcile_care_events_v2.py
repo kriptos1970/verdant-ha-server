@@ -1,19 +1,16 @@
 #!/usr/bin/env python3
-"""Audit the v1 plant view and the v2 care-event ledger after migration.
+"""Audit plant metadata and the authoritative v2 care-event ledger.
 
 This command is deliberately read-only.  It compares a canonical SwiftData
-snapshot, the server's v1 plant payloads, and the v2 ledger, then reports every
-discrepancy without choosing a winner.  Repairs belong to an explicit follow-up
-once the conflicting records have been reviewed.
+snapshot, the server's plant metadata, and the v2 ledger.  After the step 9
+cutover any event still nested in a plant payload is a legacy residue.
 """
 
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
 import json
 import os
-import urllib.parse
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -50,10 +47,12 @@ def completed(event: dict[str, Any]) -> bool:
     return event.get("deletedAt") is None and event.get("status") != "postponed"
 
 
-def anchor_mismatches(plants: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def anchor_mismatches(
+    plants: list[dict[str, Any]], ledger: dict[str, dict[str, Any]]
+) -> list[dict[str, Any]]:
     mismatches: list[dict[str, Any]] = []
     for plant in plants:
-        events = list(events_from_plants([plant]).values())
+        events = [event for event in ledger.values() if event.get("plantID") == plant["id"]]
         for kind, field in (("Annaffia", "lastWatered"), ("Concima", "lastFertilized")):
             dates = [event["date"] for event in events if event.get("kind") == kind and completed(event)]
             if not dates or plant.get(field) is None:
@@ -94,17 +93,17 @@ def reconcile(
     )
     counts = Counter(event["plantID"] for event in ledger.values())
     snapshot_diff = event_differences(snapshot_events, ledger)
-    active_diff = event_differences(remote_events, active_ledger)
-    anchors = anchor_mismatches(remote_plants)
+    legacy_nested_ids = sorted(remote_events)
+    anchors = anchor_mismatches(remote_plants, ledger)
     errors = sum(len(values) for values in snapshot_diff.values())
-    errors += sum(len(values) for values in active_diff.values()) + len(orphan_ids) + len(anchors)
+    errors += len(legacy_nested_ids) + len(orphan_ids) + len(anchors)
     errors += len(snapshot_ids - remote_ids) + len(remote_ids - snapshot_ids)
     return {
         "summary": {
             "snapshotPlants": len(snapshot_plants),
             "serverPlants": len(remote_plants),
             "snapshotEvents": len(snapshot_events),
-            "serverV1ActiveEvents": len(remote_events),
+            "serverV1NestedEvents": len(remote_events),
             "serverV2Events": len(ledger),
             "serverV2ActiveEvents": len(active_ledger),
             "serverV2Tombstones": len(ledger) - len(active_ledger),
@@ -118,7 +117,7 @@ def reconcile(
             "eventCounts": dict(sorted(counts.items())),
         },
         "snapshotVsV2": snapshot_diff,
-        "serverV1VsV2Active": active_diff,
+        "legacyNestedEventIDs": legacy_nested_ids,
         "orphanEventIDs": orphan_ids,
         "anchorMismatches": anchors,
     }
@@ -129,58 +128,15 @@ def main() -> None:
     parser.add_argument("--base", default=os.environ.get("VERDANT_BASE"))
     parser.add_argument("--token", default=os.environ.get("VERDANT_TOKEN"))
     parser.add_argument("--swiftdata-store", type=Path, required=True)
-    parser.add_argument("--apply-v1-view", action="store_true")
-    parser.add_argument("--backup-dir", type=Path)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     if not args.base or not args.token:
         raise ValueError("Imposta --base/--token oppure VERDANT_BASE/VERDANT_TOKEN")
-    if args.apply_v1_view and (not args.backup_dir or not args.backup_dir.is_dir()):
-        raise ValueError("--apply-v1-view richiede una --backup-dir già esistente")
     snapshot_plants = plants_from_swiftdata(args.swiftdata_store)
     records = server_plant_records(args.base, args.token)
     remote_plants = [record["payload"] for record in records]
     ledger = server_events(args.base, args.token)
     report = reconcile(snapshot_plants, remote_plants, ledger)
-    if args.apply_v1_view and report["summary"]["errors"]:
-        snapshot_diff = report["snapshotVsV2"]
-        active_diff = report["serverV1VsV2Active"]
-        repairable = (
-            not any(snapshot_diff.values())
-            and not active_diff["missing"]
-            and not active_diff["conflicting"]
-            and not report["orphanEventIDs"]
-            and not report["anchorMismatches"]
-            and not report["plants"]["missingOnServer"]
-            and not report["plants"]["unexpectedOnServer"]
-        )
-        if not repairable:
-            raise RuntimeError("Riconciliazione automatica rifiutata: sono presenti conflitti non additivi")
-        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        backup = args.backup_dir / f"plants-v1-before-reconciliation-{stamp}.json"
-        backup.write_text(json.dumps({"items": records}, ensure_ascii=False, indent=2) + "\n")
-        missing_ids = set(active_diff["unexpected"])
-        for record in records:
-            payload = dict(record["payload"])
-            present = {event["id"] for event in payload.get("history", [])}
-            # Legacy events do not carry plantID; use snapshot ownership instead.
-            additions = []
-            for plant in snapshot_plants:
-                if plant["id"] != payload["id"]:
-                    continue
-                additions = [event for event in plant.get("history", [])
-                             if event["id"] in missing_ids and event["id"] not in present]
-            if not additions:
-                continue
-            payload["history"] = payload.get("history", []) + additions
-            quoted = urllib.parse.quote(payload["id"], safe="")
-            request_json(args.base, args.token, "PUT", f"/v1/entities/plants/{quoted}", {
-                "payload": payload,
-                "expectedVersion": record["version"],
-            })
-        records = server_plant_records(args.base, args.token)
-        remote_plants = [record["payload"] for record in records]
-        report = reconcile(snapshot_plants, remote_plants, ledger)
     rendered = json.dumps(report, ensure_ascii=False, indent=2)
     if args.output:
         args.output.write_text(rendered + "\n")
