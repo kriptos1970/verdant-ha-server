@@ -22,6 +22,11 @@ class CareEventMigrationTests(unittest.TestCase):
         self.assertEqual(event["schemaVersion"], 2)
         self.assertEqual(event["revision"], 1)
         self.assertEqual(event["origin"], "legacy")
+        self.assertIsNone(event["note"])
+        self.assertIsNone(event["health"])
+        self.assertIsNone(event["postponedUntil"])
+        self.assertIsNone(event["productID"])
+        self.assertIsNone(event["treatmentPlanID"])
 
     def test_plan_uploads_only_missing_and_defers_conflicts(self):
         source = {"same": {"value": 1}, "missing": {"value": 2}, "conflict": {"value": 3}}

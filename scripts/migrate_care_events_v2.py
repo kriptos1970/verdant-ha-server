@@ -53,6 +53,12 @@ def iso_date(value: Any) -> str | None:
 def normalize_event(plant_id: str, source: dict[str, Any]) -> dict[str, Any]:
     event = dict(source)
     event["plantID"] = plant_id
+    # Match the server's canonical Pydantic representation.  The API emits
+    # optional fields explicitly as null, while older Swift payloads omit them.
+    # Normalizing both shapes prevents harmless null expansion from being
+    # reported as a conflict during verification/reconciliation.
+    for key in ("status", "note", "health", "postponedUntil", "productID", "treatmentPlanID"):
+        event.setdefault(key, None)
     event["schemaVersion"] = max(2, int(event.get("schemaVersion", 1)))
     event["date"] = iso_date(event["date"])
     event["createdAt"] = iso_date(event.get("createdAt", event["date"]))
