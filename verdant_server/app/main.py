@@ -57,7 +57,7 @@ async def lifespan(_: FastAPI):
     database.close()
 
 
-app = FastAPI(title="Verdant Server", version="0.6.0", lifespan=lifespan)
+app = FastAPI(title="Verdant Server", version="0.6.1", lifespan=lifespan)
 
 
 # ── Modelli Pydantic ──────────────────────────────────────────
@@ -131,7 +131,7 @@ def health() -> dict[str, Any]:
     return {
         "status": "ok",
         "service": "verdant-server",
-        "version": "0.6.0",
+        "version": "0.6.1",
         "capabilities": [
             "species-profiles", "measurements", "home-assistant-sensors",
             "sensor-mappings", "conditional-photos",
@@ -612,17 +612,14 @@ def _measurements_for_plant(plant_id: str, room: str | None, limit: int = 20) ->
 
 
 def _save_ai_plan_on_latest_entity(entity_id: str, proposal: dict[str, Any], now: datetime) -> None:
-    for attempt in range(3):
-        latest = database.get_entity("plants", entity_id)
-        if latest is None:
-            raise ValueError("Pianta rimossa durante l'aggiornamento")
-        plant = dict(latest.payload)
-        if plant.get("carePlanMode") != "AI":
-            return
-        apply_safe_ai_plan_revision(plant, proposal, now, ai_provider)
-        try:
-            database.upsert("plants", entity_id, plant, latest.version)
-            return
-        except VersionConflict:
-            if attempt == 2:
-                raise
+    # Scheduled analysis must never apply a care-plan change without approval.
+    latest = database.get_entity("plants", entity_id)
+    if latest is None or latest.payload.get("carePlanMode") != "AI":
+        return
+    database.set_state(f"ai-plan-proposal:{entity_id}", {
+        "plantID": entity_id,
+        "expectedVersion": latest.version,
+        "createdAt": now.isoformat(),
+        "proposal": proposal,
+        "status": "pending",
+    })
