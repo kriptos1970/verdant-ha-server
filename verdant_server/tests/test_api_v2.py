@@ -56,6 +56,20 @@ class CareEventV2APITests(unittest.TestCase):
         payload.update(overrides)
         return payload
 
+    def test_shared_proposals_preserve_resolution_against_old_device(self):
+        url = "/v1/ai-plan-proposals/plant-1"
+        self.assertEqual(self.client.put(url, json={"changedAt": 10, "proposal": {"plantID": "plant-1"}}, headers=self.headers).status_code, 200)
+        self.client.put(url, json={"changedAt": 20, "proposal": None}, headers=self.headers)
+        self.client.put(url, json={"changedAt": 10, "proposal": {"plantID": "plant-1"}}, headers=self.headers)
+        items = self.client.get("/v1/ai-plan-proposals", headers=self.headers).json()["items"]
+        self.assertIsNone(items["plant-1"]["proposal"])
+        self.assertEqual(items["plant-1"]["changedAt"], 20)
+
+    def test_shared_proposals_require_authentication_and_timestamp(self):
+        url = "/v1/ai-plan-proposals/plant-1"
+        self.assertIn(self.client.get("/v1/ai-plan-proposals").status_code, (401, 403))
+        self.assertEqual(self.client.put(url, json={}, headers=self.headers).status_code, 422)
+
     def test_event_lifecycle_is_idempotent_and_incremental(self):
         payload = self.event_payload()
         first = self.client.put(
@@ -122,7 +136,7 @@ class CareEventV2APITests(unittest.TestCase):
 
     def test_health_declares_authoritative_v2_ledger(self):
         health = self.client.get("/health").json()
-        self.assertEqual(health["version"], "0.6.0")
+        self.assertEqual(health["version"], "0.6.2")
         self.assertIn("care-events-v2-authoritative", health["capabilities"])
 
 

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.2
+
+- Condivide le proposte AI tra i client e conserva le risoluzioni per impedire la ricomparsa da dispositivi offline.
+- Le revisioni automatiche restano proposte: non modificano le frequenze senza conferma.
+
 ## 0.6.0
 
 - Rende il registro eventi v2 l'unica fonte autorevole della cronologia di cura.

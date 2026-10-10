@@ -1,6 +1,7 @@
 import asyncio
 import hmac
 import logging
+import threading
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -57,7 +58,7 @@ async def lifespan(_: FastAPI):
     database.close()
 
 
-app = FastAPI(title="Verdant Server", version="0.6.1", lifespan=lifespan)
+app = FastAPI(title="Verdant Server", version="0.6.2", lifespan=lifespan)
 
 
 # ── Modelli Pydantic ──────────────────────────────────────────
@@ -131,7 +132,7 @@ def health() -> dict[str, Any]:
     return {
         "status": "ok",
         "service": "verdant-server",
-        "version": "0.6.1",
+        "version": "0.6.2",
         "capabilities": [
             "species-profiles", "measurements", "home-assistant-sensors",
             "sensor-mappings", "conditional-photos",
@@ -167,6 +168,28 @@ def put_sensor_mappings(body: SensorMappingsWrite):
     items = [item.model_dump(by_alias=True) for item in body.items]
     database.set_state("sensor-mappings", items)
     return {"items": items}
+
+
+_proposal_lock = threading.RLock()
+
+
+@app.get("/v1/ai-plan-proposals", dependencies=[Depends(authorize)])
+def get_ai_plan_proposals():
+    return {"items": database.get_state("shared-ai-plan-proposals", {})}
+
+
+@app.put("/v1/ai-plan-proposals/{plant_id}", dependencies=[Depends(authorize)])
+def put_ai_plan_proposal(plant_id: str, body: dict):
+    # Keep resolutions as tombstones so an offline device cannot resurrect them.
+    if not isinstance(body.get("changedAt"), (float, int)):
+        raise HTTPException(status_code=422, detail="changedAt richiesto")
+    with _proposal_lock:
+        items = database.get_state("shared-ai-plan-proposals", {})
+        previous = items.get(plant_id)
+        if previous is None or body["changedAt"] >= previous["changedAt"]:
+            items[plant_id] = body
+            database.set_state("shared-ai-plan-proposals", items)
+    return {"ok": True}
 
 
 @app.get("/v1/sync", dependencies=[Depends(authorize)])
